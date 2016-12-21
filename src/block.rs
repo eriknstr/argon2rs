@@ -114,6 +114,15 @@ impl Matrix {
         self.0.iter().map(|l| &l[col as usize]).collect()
     }
 
+    #[inline(always)]
+    pub fn xor_column(&self, col: u32) -> Block {
+        let mut rv = self.0[0][col as usize].clone();
+        for block in self.0.iter().skip(1) {
+            rv ^= block;
+        }
+        rv
+    }
+
     pub fn iter(&self) -> Iter<Vec<Block>> { self.0.iter() }
 }
 
