@@ -14,7 +14,6 @@ pub enum Variant {
     Argon2i = 1,
 }
 
-const ARGON2_VERSION: u32 = 0x10;
 const DEF_B2HASH_LEN: usize = 64;
 const SLICES_PER_LANE: u32 = 4;
 
@@ -74,6 +73,12 @@ pub struct Argon2 {
     lanelen: u32,
     kib: u32,
     variant: Variant,
+    version: Version,
+}
+
+pub enum Version {
+    _0x10 = 0x10,
+    _0x13 = 0x13,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -151,9 +156,12 @@ impl Argon2 {
                 lanelen: kib / (4 * lanes) * 4,
                 kib: kib,
                 variant: variant,
+                version: Version::_0x13,
             })
         }
     }
+
+    fn _new() {}
 
     /// Runs the selected Argon2 variant over provided inputs, writing the final
     /// hash to the byte slice `out`. Note that the output length is assumed to
@@ -185,7 +193,7 @@ impl Argon2 {
 
         let mut blocks = Matrix::new(self.lanes, self.lanelen);
         let h0 = h0(self.lanes, out.len() as u32, self.kib, self.passes,
-                    ARGON2_VERSION, self.variant, p, s, k, x);
+                    self.version as u32, self.variant, p, s, k, x);
         h0_fn(&h0);  // kats
 
         let mut workers = Workers::new(self.lanes);
@@ -277,7 +285,10 @@ impl Argon2 {
         let cur = (lane, slice * slicelen + idx);
         let pre = (lane, self.prev(cur.1));
         let (wr, rd, refblk) = blks.get3(cur, pre, zth);
-        g(wr, rd, refblk);
+        match self.version {
+            Version::_0x10 => g(wr, rd, refblk),
+            Version::_0x13 => g_xor(wr, rd, refblk),
+        }
     }
 
     fn prev(&self, n: u32) -> u32 {
@@ -404,6 +415,20 @@ fn g(dest: &mut Block, lhs: &Block, rhs: &Block) {
     }
 
     *dest ^= (lhs, rhs);
+}
+
+fn g_xor(dest: &mut Block, lhs: &Block, rhs: &Block) {
+    let mut tmp = lhs ^ rhs;
+
+    for row in 0..8 {
+        p_row(row, tmp);
+    }
+    // column-wise, 2x u64 groups
+    for col in 0..8 {
+        p_col(col, tmp);
+    }
+
+    *dest ^= (lhs, rhs, tmp);
 }
 
 /// ``` g2 y = let g' y = g 0 y in g' . g' ```
